@@ -1,9 +1,9 @@
 import uuid
 import streamlit as st
-from chat_bot_langgraph_backend import chatbot
 from langchain_core.messages import BaseMessage, HumanMessage
+from chat_bot_langgraph_backend import chatbot, retrieve_all_threads
 
-# Utility Functions
+# ***************************************************** Utility Functions******************************************************
 def generate_thread_id():
     thread_id = uuid.uuid4()
     return thread_id
@@ -33,12 +33,13 @@ def get_last_user_message(thread_id):
                 if len(message.content) > 50:
                     content += "..."
                 return content
-        # If no user message found, it's a new conversation
-        return "New Chat"
+        # If no user message found, it's an empty conversation
+        return None
     except:
-        return "New Chat"
+        return None
 
-# Session Setup
+
+# ***************************************************** Session Set-up******************************************************
 if 'message_history' not in st.session_state:
     st.session_state['message_history'] = []
 
@@ -46,11 +47,12 @@ if 'thread_id' not in st.session_state:
     st.session_state['thread_id'] = generate_thread_id()
 
 if 'chat_threads' not in st.session_state:
-    st.session_state['chat_threads'] = []
+    st.session_state['chat_threads'] = retrieve_all_threads()
 
 add_thread(st.session_state['thread_id'])
 
-# Sidebar UI
+
+# ***************************************************** Side-Bar UI******************************************************
 st.sidebar.title("ChatVerse")
 
 if st.sidebar.button("Create New Chat"):
@@ -61,23 +63,26 @@ st.sidebar.header("My Conversations")
 for thread_id in st.session_state['chat_threads'][::-1]:
     # Display the last user question instead of thread_id
     button_label = get_last_user_message(thread_id)
-    if st.sidebar.button(button_label, key=str(thread_id)):
-        st.session_state['thread_id'] = thread_id
-        messages = load_conversation(thread_id)
+    # Skip empty conversations
+    if button_label is not None:
+        if st.sidebar.button(button_label, key=str(thread_id)):
+            st.session_state['thread_id'] = thread_id
+            messages = load_conversation(thread_id)
 
-        temp_messages = []
+            temp_messages = []
 
-        for message in messages:
-            if isinstance(message, HumanMessage):
-                role = 'user'
-            else:
-                role = 'assistant'
+            for message in messages:
+                if isinstance(message, HumanMessage):
+                    role = 'user'
+                else:
+                    role = 'assistant'
+                
+                temp_messages.append({'role': role, 'content': message.content})
             
-            temp_messages.append({'role': role, 'content': message.content})
-        
-        st.session_state['message_history'] = temp_messages
+            st.session_state['message_history'] = temp_messages
 
-# Loading the Conversation history
+
+# **********************************************************Loading the Conversation history*********************************** 
 for message in st.session_state['message_history']:
     with st.chat_message(message['role']):
         st.text(message['content'])
