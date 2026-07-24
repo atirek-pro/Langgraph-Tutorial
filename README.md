@@ -11,6 +11,7 @@ This repo contains a set of Langgraph-based workflow examples arranged by patter
 - Iterative generation + evaluation loops
 - Parallel workflow execution
 - Persistence, checkpointing, and fault-tolerance
+- LangSmith-enabled observability, traceable RAG workflows, and agent integrations
 
 ## Prerequisites
 
@@ -99,6 +100,47 @@ Covers state persistence, checkpoint recovery, and fault tolerance.
   - Generates a joke and explanation, then prints final state and intermediate checkpoints.
   - Demonstrates "time travel" by reloading an earlier checkpoint and re-invoking from that point.
 
+### Langsmith Examples
+
+Contains LangSmith-enabled LangChain and Langgraph examples for observability, tracing, evaluation, and RAG.
+
+- `simple_llm_call.py`
+  - A minimal LangChain runnable that sends a single prompt to Gemini and prints the result.
+  - Demonstrates how LangSmith automatically traces prompt construction, model calls, output parsing, latency, and token usage.
+
+- `sequential_chain.py`
+  - Shows a chained workflow where the output of one Gemini call becomes the input to another.
+  - Demonstrates named runs, tags, metadata, and sequential trace structure.
+
+- `rag_v1.py`
+  - Builds a PDF-based RAG pipeline using HuggingFace embeddings, FAISS, and Gemini.
+  - Reads a local PDF, chunks text, indexes it, retrieves context, and answers questions from the document.
+
+- `rag_v2.py`
+  - Adds LangSmith `@traceable` instrumentation to the RAG setup and query pipeline.
+  - Traces loading, splitting, indexing, and query execution as visible spans in LangSmith.
+
+- `rag_v3.py`
+  - Extends the RAG example with index fingerprinting, cached index directories, and traceable load/build runs.
+  - Demonstrates reusable vector store management and richer LangSmith metadata.
+
+- `agent.py`
+  - Creates an LLM agent with search and weather tools, powered by Gemini.
+  - Demonstrates LangChain agent invocation and tool usage as part of an observable execution flow.
+
+- `langgraph_code_via_langsmith_traceability.py`
+  - Combines Langgraph workflow state with LangSmith tracing.
+  - Evaluates an essay across language, analysis, and clarity dimensions in parallel before summarizing overall feedback.
+
+### Studying LangSmith
+
+If you want to learn LangSmith in depth, start with the two documentation files in the `Langsmith` folder:
+
+- `Langsmith/Langsmith-Overview.md` — high-level concepts, observability, trace structure, monitoring, evaluation, and practical benefits.
+- `Langsmith/Langsmith-in-Practise.md` — implementation-focused walkthroughs for the provided Python examples.
+
+These docs are designed to be read alongside the `Langsmith` code examples, so you can pair concept study with hands-on scripts.
+
 ## Learning outcomes
 
 After exploring these examples, developers should understand:
@@ -130,6 +172,18 @@ Streaming chatbot example:
 
 ```powershell
 streamlit run Chatbot Projects\chatbot_streamlit_frontend_streaming.py
+```
+
+Langsmith examples:
+
+```powershell
+python Langsmith\simple_llm_call.py
+python Langsmith\sequential_chain.py
+python Langsmith\rag_v1.py
+python Langsmith\rag_v2.py
+python Langsmith\rag_v3.py
+python Langsmith\agent.py
+python Langsmith\langgraph_code_via_langsmith_traceability.py
 ```
 
 ## Notes
