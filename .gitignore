@@ -1,3 +1,8 @@
 .env
 myenv/
 chatbot.db
+
+# Local project caches
+Langsmith/faiss_vector_index/
+Langsmith/models/
+Langsmith/indices/
