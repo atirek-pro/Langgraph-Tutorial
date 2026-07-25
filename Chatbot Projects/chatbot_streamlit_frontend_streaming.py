@@ -25,75 +25,72 @@ def get_last_user_message(thread_id):
     """Get the last user question from a conversation thread for display"""
     try:
         messages = load_conversation(thread_id)
-        # Find the last HumanMessage in reverse order
         for message in reversed(messages):
             if isinstance(message, HumanMessage):
-                # Truncate to reasonable length for display
                 content = message.content[:50]
                 if len(message.content) > 50:
                     content += "..."
                 return content
-        # If no user message found, it's an empty conversation
         return None
-    except:
+    except Exception:
         return None
 
 
-def normalize_text_content(content):
-    """Convert streamed LangChain content into a plain text string."""
-    if isinstance(content, str):
-        return content
+def build_history_from_thread(messages):
+    """
+    Convert raw LangGraph message objects (Human/AI/Tool) into a list of dicts
+    that carries both the assistant text AND any tool calls it made, so the
+    sidebar reload can re-render the stacked tool-usage components too.
+    """
+    history = []
+    # Map tool_call_id -> ToolMessage content, built first so we can attach
+    # results to the AIMessage that requested them.
+    tool_results = {}
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            tool_results[message.tool_call_id] = {
+                'name': message.name,
+                'content': message.content,
+            }
 
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                if isinstance(item.get("text"), str):
-                    parts.append(item["text"])
-                elif isinstance(item.get("content"), str):
-                    parts.append(item["content"])
-                elif isinstance(item.get("content"), list):
-                    parts.append(normalize_text_content(item["content"]))
-            elif hasattr(item, "text") and isinstance(item.text, str):
-                parts.append(item.text)
-        return "".join(parts)
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            history.append({'role': 'user', 'content': message.content})
 
-    if isinstance(content, dict):
-        if isinstance(content.get("text"), str):
-            return content["text"]
-        if isinstance(content.get("content"), str):
-            return content["content"]
-        if isinstance(content.get("content"), list):
-            return normalize_text_content(content["content"])
+        elif isinstance(message, AIMessage):
+            tool_calls_display = []
+            for tc in (message.tool_calls or []):
+                result = tool_results.get(tc.get('id'), {})
+                tool_calls_display.append({
+                    'name': tc.get('name'),
+                    'args': tc.get('args'),
+                    'output': result.get('content'),
+                })
+            # Skip intermediate AI messages that only carry tool calls and no
+            # content of their own but still have nothing to show.
+            if message.content or tool_calls_display:
+                history.append({
+                    'role': 'assistant',
+                    'content': message.content,
+                    'tool_calls': tool_calls_display,
+                })
+        # ToolMessages themselves aren't rendered as their own chat bubble;
+        # they're folded into the AIMessage's tool_calls above.
 
-    return str(content or "")
+    return history
 
 
-def stream_assistant_reply(user_input, thread_id):
-    """Stream only the final assistant reply and skip tool messages."""
-    config = {
-        'configurable': {'thread_id': thread_id},
-        'metadata': {'thread_id': thread_id},
-        'run_name': 'chat_turn'
-    }
-
-    def iter_stream():
-        for message_chunk, _ in chatbot.stream(
-            {'messages': [HumanMessage(content=user_input)]},
-            config=config,
-            stream_mode='messages'
-        ):
-            if isinstance(message_chunk, ToolMessage):
-                continue
-
-            if isinstance(message_chunk, AIMessage):
-                text = normalize_text_content(getattr(message_chunk, 'content', message_chunk))
-                if text:
-                    yield text
-
-    return iter_stream()
+def render_tool_calls(tool_calls):
+    """Render a stack of tool-usage status components above the AI text."""
+    for tc in tool_calls:
+        name = tc.get('name') or 'tool'
+        with st.status(f"🔧 Used tool: `{name}`", state="complete", expanded=False):
+            if tc.get('args') is not None:
+                st.markdown("**Input**")
+                st.json(tc['args'])
+            if tc.get('output') is not None:
+                st.markdown("**Output**")
+                st.write(tc['output'])
 
 
 # ***************************************************** Session Set-up******************************************************
@@ -118,45 +115,132 @@ if st.sidebar.button("Create New Chat"):
 st.sidebar.header("My Conversations")
 
 for thread_id in st.session_state['chat_threads'][::-1]:
-    # Display the last user question instead of thread_id
     button_label = get_last_user_message(thread_id)
-    # Skip empty conversations
     if button_label is not None:
         if st.sidebar.button(button_label, key=str(thread_id)):
             st.session_state['thread_id'] = thread_id
             messages = load_conversation(thread_id)
-
-            temp_messages = []
-
-            for message in messages:
-                if isinstance(message, HumanMessage):
-                    role = 'user'
-                else:
-                    role = 'assistant'
-                
-                temp_messages.append({'role': role, 'content': message.content})
-            
-            st.session_state['message_history'] = temp_messages
+            st.session_state['message_history'] = build_history_from_thread(messages)
 
 
-# **********************************************************Loading the Conversation history*********************************** 
+# **********************************************************Loading the Conversation history***********************************
 for message in st.session_state['message_history']:
     with st.chat_message(message['role']):
-        st.text(message['content'])
+        if message['role'] == 'assistant' and message.get('tool_calls'):
+            render_tool_calls(message['tool_calls'])
+        if message['content']:
+            st.markdown(message['content'])
 
 user_input = st.chat_input("Type here!")
 
 if user_input:
-    
+
     # Adding the user message to the history
     st.session_state['message_history'].append({'role': 'user', 'content': user_input})
     with st.chat_message("user"):
-        st.text(user_input)
+        st.markdown(user_input)
+
+    # Config Setup
+    CONFIG = {
+        'configurable': {'thread_id': st.session_state['thread_id']},
+        'metadata': {
+            'thread_id': st.session_state['thread_id']
+        },
+        'run_name': 'chat_turn'
+    }
 
     with st.chat_message("assistant"):
-        ai_message = st.write_stream(
-            stream_assistant_reply(user_input, st.session_state['thread_id'])
-        )
+        # Container that holds the stacked tool-usage status boxes (filled in
+        # as tool calls stream in), placed above the streaming text.
+        tool_stack_container = st.container()
+        text_placeholder = st.empty()
 
-    # Adding the ai message to the history
-    st.session_state['message_history'].append({'role': 'assistant', 'content': ai_message})
+        full_text = ""
+        # index -> accumulated {name, args (str, being built), id}
+        tool_call_accum = {}
+        # tool_call_id -> the st.status(...) object, so we can update it live
+        status_boxes = {}
+        # tool_call_id -> tool name (for finalizing the status label)
+        tool_names = {}
+        # Preserve tool calls (with args/output) for saving into history
+        finalized_tool_calls = []
+
+        chunk_count = 0
+        try:
+            for message_chunk, metadata in chatbot.stream(
+                {'messages': [HumanMessage(content=user_input)]},
+                config=CONFIG,
+                stream_mode='messages'
+            ):
+                chunk_count += 1
+
+                # ---- Tool result coming back ----
+                if isinstance(message_chunk, ToolMessage):
+                    tool_id = message_chunk.tool_call_id
+                    name = tool_names.get(tool_id, message_chunk.name)
+
+                    if tool_id in status_boxes:
+                        status_boxes[tool_id].update(
+                            label=f"✅ Used tool: `{name}`", state="complete"
+                        )
+                        with status_boxes[tool_id]:
+                            st.markdown("**Output**")
+                            st.write(message_chunk.content)
+
+                    finalized_tool_calls.append({
+                        'name': name,
+                        'args': tool_call_accum.get(tool_id, {}).get('args_display'),
+                        'output': message_chunk.content,
+                    })
+                    continue
+
+                # ---- AI message chunk: plain text and/or streamed tool calls ----
+                if getattr(message_chunk, 'content', None):
+                    full_text += message_chunk.content
+                    text_placeholder.markdown(full_text + "▌")
+
+                for tc_chunk in (getattr(message_chunk, 'tool_call_chunks', None) or []):
+                    idx = tc_chunk.get('index', 0)
+                    entry = tool_call_accum.setdefault(idx, {'name': '', 'args': '', 'id': None})
+
+                    if tc_chunk.get('name'):
+                        entry['name'] += tc_chunk['name']
+                    if tc_chunk.get('args'):
+                        entry['args'] += tc_chunk['args']
+                    if tc_chunk.get('id'):
+                        entry['id'] = tc_chunk['id']
+
+                    tool_id = entry['id']
+                    if tool_id and entry['name'] and tool_id not in status_boxes:
+                        tool_names[tool_id] = entry['name']
+                        sb = tool_stack_container.status(
+                            f"🔧 Calling tool: `{entry['name']}`...", state="running"
+                        )
+                        status_boxes[tool_id] = sb
+                        tool_call_accum[tool_id] = entry
+
+                    if tool_id:
+                        entry['args_display'] = entry['args']
+
+        except Exception as e:
+            # Surface the real error instead of leaving the spinner hanging
+            # with no visible feedback.
+            st.error(f"Streaming failed after {chunk_count} chunk(s): {e}")
+            st.exception(e)
+
+        if chunk_count == 0:
+            st.warning(
+                "No chunks were received from chatbot.stream(). This means the "
+                "call itself is hanging/blocking on the backend side (not a UI "
+                "bug) — check your graph/checkpointer setup."
+            )
+
+        text_placeholder.markdown(full_text if full_text else "*(no text content received)*")
+        ai_message = full_text
+
+    # Adding the ai message (with any tool calls) to the history
+    st.session_state['message_history'].append({
+        'role': 'assistant',
+        'content': ai_message,
+        'tool_calls': finalized_tool_calls,
+    })
