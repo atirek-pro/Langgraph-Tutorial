@@ -97,7 +97,13 @@ if user_input:
         st.text(user_input)
 
     # Config Setup
-    CONFIG = {'configurable': {'thread_id': st.session_state['thread_id']}}
+    CONFIG = {
+        'configurable': {'thread_id': st.session_state['thread_id']},
+        'metadata': {
+            'thread_id': st.session_state['thread_id']
+        },
+        'run_name': 'chat_turn'
+    }
     
     with st.chat_message("assistant"):
         ai_message = st.write_stream(
