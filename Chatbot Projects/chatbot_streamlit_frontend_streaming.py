@@ -1,6 +1,6 @@
 import uuid
 import streamlit as st
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from chat_bot_langgraph_backend import chatbot, retrieve_all_threads
 
 # ***************************************************** Utility Functions******************************************************
@@ -37,6 +37,63 @@ def get_last_user_message(thread_id):
         return None
     except:
         return None
+
+
+def normalize_text_content(content):
+    """Convert streamed LangChain content into a plain text string."""
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+                elif isinstance(item.get("content"), str):
+                    parts.append(item["content"])
+                elif isinstance(item.get("content"), list):
+                    parts.append(normalize_text_content(item["content"]))
+            elif hasattr(item, "text") and isinstance(item.text, str):
+                parts.append(item.text)
+        return "".join(parts)
+
+    if isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content["text"]
+        if isinstance(content.get("content"), str):
+            return content["content"]
+        if isinstance(content.get("content"), list):
+            return normalize_text_content(content["content"])
+
+    return str(content or "")
+
+
+def stream_assistant_reply(user_input, thread_id):
+    """Stream only the final assistant reply and skip tool messages."""
+    config = {
+        'configurable': {'thread_id': thread_id},
+        'metadata': {'thread_id': thread_id},
+        'run_name': 'chat_turn'
+    }
+
+    def iter_stream():
+        for message_chunk, _ in chatbot.stream(
+            {'messages': [HumanMessage(content=user_input)]},
+            config=config,
+            stream_mode='messages'
+        ):
+            if isinstance(message_chunk, ToolMessage):
+                continue
+
+            if isinstance(message_chunk, AIMessage):
+                text = normalize_text_content(getattr(message_chunk, 'content', message_chunk))
+                if text:
+                    yield text
+
+    return iter_stream()
 
 
 # ***************************************************** Session Set-up******************************************************
@@ -96,23 +153,10 @@ if user_input:
     with st.chat_message("user"):
         st.text(user_input)
 
-    # Config Setup
-    CONFIG = {
-        'configurable': {'thread_id': st.session_state['thread_id']},
-        'metadata': {
-            'thread_id': st.session_state['thread_id']
-        },
-        'run_name': 'chat_turn'
-    }
-    
     with st.chat_message("assistant"):
         ai_message = st.write_stream(
-            message_chunk.content for message_chunk, metadata in chatbot.stream(
-                {'messages': [HumanMessage(content=user_input)]}, 
-                config=CONFIG,
-                stream_mode='messages'
-            )
+            stream_assistant_reply(user_input, st.session_state['thread_id'])
         )
-    
+
     # Adding the ai message to the history
     st.session_state['message_history'].append({'role': 'assistant', 'content': ai_message})

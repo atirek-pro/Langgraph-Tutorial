@@ -9,7 +9,7 @@ The system is designed around two core components:
 - a LangGraph backend that manages the conversation workflow and invokes the LLM,
 - a Streamlit frontend that presents the chat UI, stores session state, and manages conversation history.
 
-The chatbot is intended for interactive use, persistent conversation tracking, and thread-based continuity across sessions.
+The chatbot is intended for interactive use, persistent conversation tracking, thread-based continuity across sessions, and simple tool-augmented reasoning.
 
 ---
 
@@ -73,13 +73,15 @@ Features:
 
 ### 3.4 LangGraph-Based Execution Flow
 
-The chatbot uses a minimal LangGraph workflow with a single execution node.
+The chatbot uses a LangGraph workflow that supports both conversational responses and tool execution.
 
 Workflow:
 
-- START → chat_node → END
+- START → chat_node
+- chat_node → tools (when the model decides a tool is needed)
+- tools → chat_node
 
-This makes the system easy to understand while still being extensible for future nodes such as retrieval, tool use, or follow-up logic.
+This allows the chatbot to perform actions such as web search, arithmetic, or stock lookup during a conversation and then continue with the updated context.
 
 ### 3.5 LLM Integration with Gemini
 
@@ -89,7 +91,8 @@ Features:
 
 - sends the conversation history to the model,
 - generates assistant responses based on the latest input,
-- uses a modern generative model suitable for conversational interaction.
+- binds tool definitions to the model so it can decide when to invoke them,
+- uses a modern generative model suitable for conversational interaction and lightweight agent workflows.
 
 ### 3.6 Streaming Responses
 
@@ -99,7 +102,8 @@ Features:
 
 - makes the experience feel more interactive,
 - shows output as it is generated,
-- improves user engagement during longer responses.
+- improves user engagement during longer responses,
+- filters out intermediate tool-related messages so the user only sees the final assistant response.
 
 ### 3.7 Sidebar Conversation Browser
 
@@ -139,7 +143,20 @@ Features:
 
 - shows the full conversation history in order,
 - differentiates between user and assistant messages,
-- maintains a coherent chat experience.
+- maintains a coherent chat experience,
+- preserves the final assistant answer cleanly even when the underlying workflow uses tools internally.
+
+### 3.11 Tool-Enabled Conversations
+
+The chatbot now supports tool-augmented interactions through LangGraph.
+
+Available tools include:
+
+- a calculator for arithmetic tasks,
+- a stock price lookup tool for market data,
+- a web search tool for general information retrieval.
+
+This makes the assistant more capable for queries that require external information or computation.
 
 ---
 
@@ -175,12 +192,13 @@ Responsibilities:
 
 ### 4.4 Graph Construction
 
-A StateGraph is created and populated with one node and two edges:
+A StateGraph is created and populated with a chat node, a tool node, and conditional routing:
 
 - START → chat_node
-- chat_node → END
+- chat_node → tools when the model requests a tool call
+- tools → chat_node after the tool result is returned
 
-This defines a simple but functional graph for chatbot execution.
+This defines a simple but functional graph for chatbot execution with optional tool use.
 
 ### 4.5 Checkpointing and Persistence
 
@@ -188,7 +206,17 @@ The backend connects to SQLite and wraps the database with SqliteSaver.
 
 This gives the chatbot durability and the ability to restore conversations based on thread IDs.
 
-### 4.6 Thread Retrieval Utility
+### 4.6 Tool Integration
+
+The backend binds three tools to the Gemini model:
+
+- a calculator tool for basic arithmetic,
+- a stock price lookup tool for financial data,
+- a DuckDuckGo search tool for web information.
+
+These tools are exposed through LangChain tool definitions and routed through the graph using ToolNode and tools_condition.
+
+### 4.7 Thread Retrieval Utility
 
 The retrieve_all_threads function collects all known thread IDs from the checkpoint store.
 
@@ -247,7 +275,7 @@ This creates a familiar chat experience with visible turn-by-turn interaction.
 
 The assistant reply is streamed into the UI using Streamlit’s write_stream function.
 
-This provides real-time feedback and makes the response feel more natural.
+This provides real-time feedback and makes the response feel more natural. The stream is filtered so that internal tool-related messages do not appear to the user, leaving a cleaner chat experience.
 
 ---
 
@@ -258,14 +286,19 @@ The backend workflow can be represented as follows:
 ```mermaid
 flowchart LR
     A[Start] --> B[chat_node]
-    B --> C[End]
+    B --> C{Tool needed?}
+    C -->|Yes| D[tools]
+    D --> B
+    C -->|No| E[End]
 ```
 
-This simple graph shows the chatbot’s execution flow:
+This updated graph shows the chatbot’s execution flow:
 
 - the workflow starts,
 - the chat node processes the message,
-- the execution completes.
+- the model may decide to call a tool,
+- the tool result is sent back to the chat node,
+- the workflow completes once the final answer is produced.
 
 ---
 
@@ -277,9 +310,10 @@ A typical interaction follows this path:
 2. The message is appended to the current session history.
 3. The frontend builds a configuration object containing the current thread ID.
 4. The backend executes the LangGraph workflow.
-5. The chat node sends the conversation to Gemini.
-6. The generated assistant reply is streamed back to the UI.
-7. The response is added to the conversation history and preserved in state.
+5. The chat node sends the conversation to Gemini, which may decide to invoke a tool.
+6. If a tool is required, the tool result is routed back into the chat node for follow-up reasoning.
+7. The final assistant reply is streamed back to the UI without showing internal tool messages.
+8. The response is added to the conversation history and preserved in state.
 
 ---
 
@@ -291,7 +325,7 @@ This chatbot provides several practical advantages:
 - support for multiple independent chat threads,
 - persistence of messages for later review,
 - a polished end-user interface,
-- extensibility for future features such as tool calling, retrieval, and advanced prompt workflows.
+- extensibility for future features such as retrieval, multi-step agent workflows, and richer tool orchestration.
 
 ---
 
@@ -303,6 +337,7 @@ The chatbot is a lightweight but technically solid AI assistant application that
 - Gemini for language generation,
 - Streamlit for interaction,
 - SQLite for persistence,
-- thread-based state handling for continuity.
+- thread-based state handling for continuity,
+- tool-augmented reasoning for external information and computation.
 
 It is well-suited as a tutorial project, a starter application for agent-based chat systems, or a foundation for more advanced chatbot features.
