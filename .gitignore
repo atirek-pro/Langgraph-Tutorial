@@ -1,6 +1,8 @@
 .env
 myenv/
 chatbot.db
+chatbot.db-shm
+chatbot.db-wal
 
 # Local project caches
 Langsmith/faiss_vector_index/

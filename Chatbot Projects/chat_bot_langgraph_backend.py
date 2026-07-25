@@ -1,13 +1,17 @@
+import os
 import sqlite3
 from dotenv import load_dotenv
+
+# Set the LANGCHAIN_PROJECT environment variable to "CHATBOT_PROJECT" for Langsmith observability and tracking
+load_dotenv()
+os.environ["LANGCHAIN_PROJECT"] = "CHATBOT_PROJECT"
+
 from typing import TypedDict, Annotated
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage
-
-load_dotenv()
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
