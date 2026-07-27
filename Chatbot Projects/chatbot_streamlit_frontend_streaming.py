@@ -4,6 +4,32 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 from chat_bot_langgraph_backend import chatbot, retrieve_all_threads
 
 # ***************************************************** Utility Functions******************************************************
+def extract_text(content):
+    """
+    Normalize a LangChain message's `.content` into a plain string.
+
+    Some providers (e.g. Gemini via langchain_google_genai) can emit content as:
+      - a plain string: "hello"
+      - a list of content blocks: [{'type': 'text', 'text': 'hello'}, ...]
+      - a list containing non-text / tool-related blocks that should be
+        skipped for display purposes.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                if block.get('text'):
+                    parts.append(block['text'])
+        return "".join(parts)
+    return str(content)
+
+
 def generate_thread_id():
     thread_id = uuid.uuid4()
     return thread_id
@@ -27,8 +53,9 @@ def get_last_user_message(thread_id):
         messages = load_conversation(thread_id)
         for message in reversed(messages):
             if isinstance(message, HumanMessage):
-                content = message.content[:50]
-                if len(message.content) > 50:
+                text = extract_text(message.content)
+                content = text[:50]
+                if len(text) > 50:
                     content += "..."
                 return content
         return None
@@ -55,7 +82,7 @@ def build_history_from_thread(messages):
 
     for message in messages:
         if isinstance(message, HumanMessage):
-            history.append({'role': 'user', 'content': message.content})
+            history.append({'role': 'user', 'content': extract_text(message.content)})
 
         elif isinstance(message, AIMessage):
             tool_calls_display = []
@@ -68,10 +95,11 @@ def build_history_from_thread(messages):
                 })
             # Skip intermediate AI messages that only carry tool calls and no
             # content of their own but still have nothing to show.
-            if message.content or tool_calls_display:
+            text = extract_text(message.content)
+            if text or tool_calls_display:
                 history.append({
                     'role': 'assistant',
-                    'content': message.content,
+                    'content': text,
                     'tool_calls': tool_calls_display,
                 })
         # ToolMessages themselves aren't rendered as their own chat bubble;
@@ -185,18 +213,19 @@ if user_input:
                         )
                         with status_boxes[tool_id]:
                             st.markdown("**Output**")
-                            st.write(message_chunk.content)
+                            st.write(extract_text(message_chunk.content))
 
                     finalized_tool_calls.append({
                         'name': name,
                         'args': tool_call_accum.get(tool_id, {}).get('args_display'),
-                        'output': message_chunk.content,
+                        'output': extract_text(message_chunk.content),
                     })
                     continue
 
                 # ---- AI message chunk: plain text and/or streamed tool calls ----
-                if getattr(message_chunk, 'content', None):
-                    full_text += message_chunk.content
+                chunk_text = extract_text(getattr(message_chunk, 'content', None))
+                if chunk_text:
+                    full_text += chunk_text
                     text_placeholder.markdown(full_text + "▌")
 
                 for tc_chunk in (getattr(message_chunk, 'tool_call_chunks', None) or []):
