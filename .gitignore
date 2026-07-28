@@ -8,3 +8,6 @@ chatbot.db-wal
 Langsmith/faiss_vector_index/
 Langsmith/models/
 Langsmith/indices/
+
+RAG-in-Langgraph/models
+RAG-in-Langgraph/vector_store
