@@ -1,50 +1,50 @@
 import os
-import sqlite3
+import asyncio
+import threading
 from dotenv import load_dotenv
 
-# Set the LANGCHAIN_PROJECT environment variable to "CHATBOT_PROJECT" for Langsmith observability and tracking
 load_dotenv()
 os.environ["LANGCHAIN_PROJECT"] = "CHATBOT_PROJECT"
 
 from typing import TypedDict, Annotated
+from langchain_core.tools import tool, BaseTool
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_mcp_adapters.client import MultiServerMCPClient
+import aiosqlite
 import requests
 
-class ChatState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
+# -------------------
+# Dedicated async loop for backend tasks
+# -------------------
+_ASYNC_LOOP = asyncio.new_event_loop()
+_ASYNC_THREAD = threading.Thread(target=_ASYNC_LOOP.run_forever, daemon=True)
+_ASYNC_THREAD.start()
 
+def _submit_async(coro):
+    return asyncio.run_coroutine_threadsafe(coro, _ASYNC_LOOP)
+
+def run_async(coro):
+    return _submit_async(coro).result()
+
+def submit_async_task(coro):
+    """Schedule a coroutine on the backend event loop (doesn't block)."""
+    return _submit_async(coro)
+
+# -------------------
+# 1. LLM
+# -------------------
 model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
-@tool
-def calculator(first_num: float, second_num: float, operation: str) -> dict:
-    """
-    Perform a basic arithmetic operation on two numbers.
-    Supported operations: add, sub, mul, div
-    """
-    try:
-        if operation == "add":
-            result = first_num + second_num
-        elif operation == "sub":
-            result = first_num - second_num
-        elif operation == "mul":
-            result = first_num * second_num
-        elif operation == "div":
-            if second_num == 0:
-                return {"error": "Division by zero is not allowed"}
-            result = first_num / second_num
-        else:
-            return {"error": f"Unsupported operation '{operation}'"}
-
-        return {"first_num": first_num, "second_num": second_num, "operation": operation, "result": result}
-    except Exception as e:
-        return {"error": str(e)}
+# -------------------
+# 2. Tools
+# -------------------
+search_tool = DuckDuckGoSearchRun(region="us-en")
 
 @tool
 def get_stock_price(symbol: str) -> dict:
@@ -56,33 +56,76 @@ def get_stock_price(symbol: str) -> dict:
     r = requests.get(url)
     return r.json()
 
-search_tool = DuckDuckGoSearchRun(region="us-en")
-tools = [search_tool, get_stock_price, calculator]
-llm_with_tools = model.bind_tools(tools)
+mcp_client = MultiServerMCPClient(
+    {
+        "calculator": {
+            "transport": "stdio",
+            "command": r"D:\AI Engineering\Agentic AI\Langgraph-Tutorial\myenv\Scripts\python.exe",
+            "args": [r"D:\AI Engineering\Agentic AI\Langgraph-Tutorial\MCP\mcp_server.py"],
+        }
+    }
+)
 
-def chat_node(state: ChatState):
-    messages = state['messages']
-    response = llm_with_tools.invoke(messages)
+def load_mcp_tools() -> list[BaseTool]:
+    try:
+        return run_async(mcp_client.get_tools())
+    except Exception as e:
+        print(f"Failed to load MCP tools: {e}")
+        return []
+
+mcp_tools = load_mcp_tools()
+tools = [search_tool, get_stock_price, *mcp_tools]
+llm_with_tools = model.bind_tools(tools) if tools else model
+
+# -------------------
+# 3. State
+# -------------------
+class ChatState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+
+# -------------------
+# 4. Nodes
+# -------------------
+async def chat_node(state: ChatState):
+    messages = state["messages"]
+    response = await llm_with_tools.ainvoke(messages)
     return {"messages": [response]}
 
-tool_node = ToolNode(tools)
+tool_node = ToolNode(tools) if tools else None
 
-conn = sqlite3.connect(database='chatbot.db', check_same_thread=False)
-checkpointer = SqliteSaver(conn=conn)
+# -------------------
+# 5. Checkpointer
+# -------------------
+async def _init_checkpointer():
+    conn = await aiosqlite.connect(database="chatbot.db")
+    return AsyncSqliteSaver(conn)
 
+checkpointer = run_async(_init_checkpointer())
+
+# -------------------
+# 6. Graph
+# -------------------
 graph = StateGraph(ChatState)
-
 graph.add_node("chat_node", chat_node)
-graph.add_node("tools", tool_node)
-
 graph.add_edge(START, "chat_node")
-graph.add_conditional_edges("chat_node", tools_condition)
-graph.add_edge("tools", "chat_node")
+
+if tool_node:
+    graph.add_node("tools", tool_node)
+    graph.add_conditional_edges("chat_node", tools_condition)
+    graph.add_edge("tools", "chat_node")
+else:
+    graph.add_edge("chat_node", END)
 
 chatbot = graph.compile(checkpointer=checkpointer)
 
-def retrieve_all_threads():
+# -------------------
+# 7. Helpers
+# -------------------
+async def _alist_threads():
     all_threads = set()
-    for checkpoint in checkpointer.list(None):
-        all_threads.add(checkpoint.config["configurable"]['thread_id'])
+    async for checkpoint in checkpointer.alist(None):
+        all_threads.add(checkpoint.config["configurable"]["thread_id"])
     return list(all_threads)
+
+def retrieve_all_threads():
+    return run_async(_alist_threads())
