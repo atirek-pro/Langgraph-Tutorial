@@ -1,7 +1,8 @@
 import uuid
+import queue
 import streamlit as st
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
-from chat_bot_langgraph_backend import chatbot, retrieve_all_threads
+from chat_bot_langgraph_backend import chatbot, retrieve_all_threads, submit_async_task
 
 # ***************************************************** Utility Functions******************************************************
 def extract_text(content):
@@ -28,6 +29,36 @@ def extract_text(content):
                     parts.append(block['text'])
         return "".join(parts)
     return str(content)
+
+
+def stream_sync(async_gen_func, *args, **kwargs):
+    """
+    Bridges an async generator running on the backend's dedicated event loop
+    (see chat_bot_langgraph_backend._ASYNC_LOOP) to a plain synchronous
+    iterator that Streamlit's main thread can consume with a normal `for`
+    loop, just like the old chatbot.stream(...) did.
+    """
+    q = queue.Queue()
+    _SENTINEL = object()
+
+    async def _runner():
+        try:
+            async for item in async_gen_func(*args, **kwargs):
+                q.put(item)
+        except Exception as e:
+            q.put(e)
+        finally:
+            q.put(_SENTINEL)
+
+    submit_async_task(_runner())
+
+    while True:
+        item = q.get()
+        if item is _SENTINEL:
+            return
+        if isinstance(item, Exception):
+            raise item
+        yield item
 
 
 def generate_thread_id():
@@ -195,7 +226,8 @@ if user_input:
 
         chunk_count = 0
         try:
-            for message_chunk, metadata in chatbot.stream(
+            for message_chunk, metadata in stream_sync(
+                chatbot.astream,
                 {'messages': [HumanMessage(content=user_input)]},
                 config=CONFIG,
                 stream_mode='messages'
@@ -259,7 +291,7 @@ if user_input:
 
         if chunk_count == 0:
             st.warning(
-                "No chunks were received from chatbot.stream(). This means the "
+                "No chunks were received from chatbot.astream(). This means the "
                 "call itself is hanging/blocking on the backend side (not a UI "
                 "bug) — check your graph/checkpointer setup."
             )
