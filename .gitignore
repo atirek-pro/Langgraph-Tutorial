@@ -3,6 +3,9 @@ myenv/
 chatbot.db
 chatbot.db-shm
 chatbot.db-wal
+Chatbot Projects/__pycache__
+Chatbot Projects/models
+Chatbot Projects/rag_vector_store
 
 # Local project caches
 Langsmith/faiss_vector_index/
