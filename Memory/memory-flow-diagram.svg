@@ -1,0 +1,60 @@
+<svg viewBox="0 0 1000 320" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4b5563"/>
+    </marker>
+    <marker id="arrowLoop" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#9ca3af"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="320" fill="#ffffff"/>
+
+  <!-- Step boxes -->
+  <g font-size="15" font-weight="600" fill="#111827">
+    <rect x="20"  y="110" width="170" height="80" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+    <text x="105" y="145" text-anchor="middle">1. Creation /</text>
+    <text x="105" y="165" text-anchor="middle">Update</text>
+
+    <rect x="230" y="110" width="170" height="80" rx="10" fill="#ecfeff" stroke="#06b6d4" stroke-width="2"/>
+    <text x="315" y="155" text-anchor="middle">2. Storage</text>
+
+    <rect x="440" y="110" width="170" height="80" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+    <text x="525" y="155" text-anchor="middle">3. Retrieval</text>
+
+    <rect x="650" y="110" width="170" height="80" rx="10" fill="#fefce8" stroke="#eab308" stroke-width="2"/>
+    <text x="735" y="155" text-anchor="middle">4. Injection</text>
+
+    <rect x="860" y="110" width="120" height="80" rx="10" fill="#fdf2f8" stroke="#ec4899" stroke-width="2"/>
+    <text x="920" y="145" text-anchor="middle" font-size="13">LLM</text>
+    <text x="920" y="163" text-anchor="middle" font-size="13">Response</text>
+  </g>
+
+  <!-- Forward arrows -->
+  <line x1="190" y1="150" x2="225" y2="150" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="400" y1="150" x2="435" y2="150" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="610" y1="150" x2="645" y2="150" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="820" y1="150" x2="855" y2="150" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Feedback loop -->
+  <path d="M 920 190 L 920 260 L 105 260 L 105 195" fill="none" stroke="#9ca3af" stroke-width="2" stroke-dasharray="6,5" marker-end="url(#arrowLoop)"/>
+  <text x="512" y="280" text-anchor="middle" font-size="13" fill="#6b7280">new signal feeds back into memory creation</text>
+
+  <!-- Title labels under each box -->
+  <g font-size="12" fill="#4b5563">
+    <text x="105" y="205" text-anchor="middle">What's worth</text>
+    <text x="105" y="220" text-anchor="middle">remembering?</text>
+
+    <text x="315" y="205" text-anchor="middle">Where &amp; how</text>
+    <text x="315" y="220" text-anchor="middle">is it kept?</text>
+
+    <text x="525" y="205" text-anchor="middle">What's relevant</text>
+    <text x="525" y="220" text-anchor="middle">right now?</text>
+
+    <text x="735" y="205" text-anchor="middle">Inserted into</text>
+    <text x="735" y="220" text-anchor="middle">the prompt</text>
+  </g>
+
+  <text x="500" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">Long-Term Memory Pipeline</text>
+  <text x="500" y="52" text-anchor="middle" font-size="13" fill="#6b7280">Long-Term Memory → Retrieval → Short-Term Context → Prompt → LLM → Output</text>
+</svg>
