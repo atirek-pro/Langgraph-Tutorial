@@ -14,3 +14,8 @@ Langsmith/indices/
 
 RAG-in-Langgraph/models
 RAG-in-Langgraph/vector_store
+
+# Capstone projects
+/Capstone Projects/CRAG/documents
+/Capstone Projects/CRAG/filtering_model
+/Capstone Projects/CRAG/faiss_vector_store
