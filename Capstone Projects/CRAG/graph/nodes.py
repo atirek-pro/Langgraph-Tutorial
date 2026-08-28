@@ -19,7 +19,7 @@ class RetrievalNode:
         )
 
         return {
-            "documents": documents
+            "docs": documents
         }
 
 
